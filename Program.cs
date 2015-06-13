@@ -58,6 +58,8 @@ namespace RecreateFilter
                     }
                     ignoreFile.Close();
 
+                    if (!FolderIgnoreList.Contains(".git")) FolderIgnoreList.Add(".git");
+
                     if (FolderIgnoreList.Count > 0)
                     {
                         Console.WriteLine("Ignoring:");
@@ -95,7 +97,7 @@ namespace RecreateFilter
                 foreach (string folder in Directory.GetDirectories(path))
                     if (!FolderIgnoreList.Contains(Path.GetFileName(folder)))
                     {
-                        Console.WriteLine("{0}{1}", new string(' ', indent), Path.GetFileName(folder));
+                        //Console.WriteLine("{0}{1}", new string(' ', indent), Path.GetFileName(folder));
                         FolderList.Add(folder);
                         FetchFolderList(folder, indent + 2);
                     }
@@ -149,26 +151,38 @@ namespace RecreateFilter
             xmldoc.Load(Environment.CurrentDirectory + @"\" + projectFile);
             const string nameSpace = "http://schemas.microsoft.com/developer/msbuild/2003";
             var NS = AttachNamespaces(xmldoc, nameSpace);
-            var itemGroup = xmldoc.SelectSingleNode("/ns:Project/ns:ItemGroup[not(@Label)]", NS);
-            if (itemGroup != null)
+
+            // There should be at least 2 item group elements, from which the one with the label should not be touched
+            var itemGroups = xmldoc.SelectNodes("/ns:Project/ns:ItemGroup[not(@Label)]", NS);
+            if (itemGroups != null && itemGroups.Count > 1)
             {
-                itemGroup.RemoveAll();
-
-                // add files
-                foreach (var file in FileList)
+                for (int i = 0; i < itemGroups.Count; i++)
                 {
-                    var itemType = "None";
-                    if (Path.GetExtension(file) == ".c" || Path.GetExtension(file) == ".cc") itemType = "ClCompile";
-                    else if (Path.GetExtension(file) == ".h") itemType = "ClInclude";
+                    var itemGroup = itemGroups[i];
+                    if (i == 0)
+                    {
+                        itemGroup.RemoveAll();
 
-                    XmlNode fileItem = itemGroup.OwnerDocument.CreateNode(XmlNodeType.Element, itemType, nameSpace);
-                    var fileAttribute = itemGroup.OwnerDocument.CreateAttribute("Include");
-                    fileAttribute.InnerText = file.Replace(workingDir + "\\", (workingDir != Environment.CurrentDirectory ? @"..\" : ""));
-                    fileItem.Attributes.Append(fileAttribute);
-                    itemGroup.AppendChild(fileItem);
+                        // add files
+                        foreach (var file in FileList)
+                        {
+                            var itemType = "None";
+                            if (Path.GetExtension(file) == ".c" || Path.GetExtension(file) == ".cc") itemType = "ClCompile";
+                            else if (Path.GetExtension(file) == ".h") itemType = "ClInclude";
+
+                            XmlNode fileItem = itemGroup.OwnerDocument.CreateNode(XmlNodeType.Element, itemType, nameSpace);
+                            var fileAttribute = itemGroup.OwnerDocument.CreateAttribute("Include");
+                            fileAttribute.InnerText = file.Replace(workingDir + "\\", (workingDir != Environment.CurrentDirectory ? @"..\" : ""));
+                            fileItem.Attributes.Append(fileAttribute);
+                            itemGroup.AppendChild(fileItem);
+                        }
+                    }
+                    else
+                    {
+                        itemGroup.ParentNode.RemoveChild(itemGroup);
+                    }
                 }
             }
-
             xmldoc.Save(Environment.CurrentDirectory + @"\" + projectFile);
         }
 
